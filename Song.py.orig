@@ -45,8 +45,7 @@ class _Song(object):
 
 
 base = "https://api.genius.com"
-token = 'Bearer ' + GENIUS_API_KEY
-headers = {'Authorization': token}
+headers = {'Authorization': 'Bearer ' + GENIUS_API_KEY}
 
 search_url = base + "/search"
 
