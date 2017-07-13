@@ -2,9 +2,9 @@
 # Created:	7/12/2017
 #
 
-
 import requests
 from bs4 import BeautifulSoup
+from keys import GENIUS_API_KEY 
 
 
 
@@ -45,7 +45,7 @@ class _Song(object):
 
 
 base = "https://api.genius.com"
-headers = {'Authorization': 'Bearer SE3HFHeA0mn6piURvZqeX1AnVJG-Zw0tBVk8tSjqQCVHUsqaryHPVo4qtxO2v5N6'}
+headers = {'Authorization': 'Bearer ' + GENIUS_API_KEY}
 
 search_url = base + "/search"
 
