@@ -5,6 +5,7 @@
 import requests
 from bs4 import BeautifulSoup
 from keys import GENIUS_API_KEY
+from keys import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET
 import pickle
 import sys
 
