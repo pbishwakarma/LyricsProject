@@ -3,12 +3,26 @@
 #
 
 import requests
+import time
 from bs4 import BeautifulSoup
 from keys import GENIUS_API_KEY
 from keys import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET
 import pickle
 import sys
 
+
+class _Token(object):
+
+	def __init__(tok_tope, token, exp_time=None):
+		self.type = tok_type
+		self.token = token
+		self.exp_time = exp_time
+
+	def getToken(self):
+		return self.token
+
+	def isExpired(self):
+		return (time.time() - self.exp_time) > 0
 
 
 class _Song(object):

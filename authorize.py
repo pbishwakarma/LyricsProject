@@ -8,20 +8,7 @@ from flask import Flask
 # Spotify client info
 from keys import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET
 
-# Spotify urls
-BASE_URL = 'https://accounts.spotify.com'
-TOKEN_URL = BASE_URL + '/api/token'
-API_URL = 'https://api.spotify.com'
 
-
-app = Flask(__name__)
-
-@app.route("/")
-def index():
-	response = requestToken(SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET)
-	return str(response)
-
-	
 def requestToken(client_id, client_secret):
 
 
@@ -29,8 +16,8 @@ def requestToken(client_id, client_secret):
 
 	data = {'grant_type': 'client_credentials'}
 
-	encoded = base64.b64encode(bytes(client_id + ':' +client_secret, 'utf-8'))
-	headers = {'Authorization': 'Basic %s' % encoded}
+	encoded = base64.b64encode((client_id + ':' + client_secret).encode('utf-8'))
+	headers = {'Authorization': 'Basic %s' % encoded.decode('utf-8')}
 
 	return requests.post(AUTH_URL, data=data, headers=headers).json()
 
