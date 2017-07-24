@@ -10,10 +10,12 @@ from keys import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET
 import pickle
 import sys
 
+import re, urllib.parse, urllib.request
+
 
 class _Token(object):
 
-	def __init__(tok_tope, token, exp_time=None):
+	def __init__(self, tok_type, token, exp_time=None):
 		self.type = tok_type
 		self.token = token
 		self.exp_time = exp_time
@@ -22,7 +24,10 @@ class _Token(object):
 		return self.token
 
 	def isExpired(self):
-		return (time.time() - self.exp_time) > 0
+		if not self.exp_time:
+			return (time.time() - self.exp_time) > 0
+		else:
+			return False
 
 
 class _Song(object):
@@ -61,139 +66,197 @@ class _Song(object):
 		return "'" + self.title + "' " + "by " + self.artist
 
 
-base = "https://api.genius.com"
-token = 'Bearer ' + GENIUS_API_KEY
-HEADERS = {'Authorization': token}
-SEARCH_URL = base + "/search"
+
+
+class SpotifyScraper(object):
+
+
+	def __init__(client_id, client_secret):
+		self.id = client_id
+		self.secret = client_secret
+		self.token = None
+
+
+	def _requestToken():
+
+		AUTH_URL ='https://accounts.spotify.com/api/token'
+
+		data = {'grant_type': 'client_credentials'}
+
+		encoded = base64.b64encode((self.id + ':' + self.secret).encode('utf-8'))
+		headers = {'Authorization': 'Basic %s' % encoded.decode('utf-8')}
+
+		return requests.post(AUTH_URL, data=data, headers=headers).json()
+
+	def makeAccessToken():
+		if not self.token or self.token.isExpired():
+			response = self._requestToken()
+			tok = response['access_token']
+			exp_time = int(time.time()) + int(response['expires_in'])
+			self.token = _Token("Spotify", tok, exp_time)
+		else:
+			raise SpotifyTokenError("Token already exists and is not expired")
+
+	
+
+
+
+class GeniusScraper(object):
+
+	BASE_URL = "https://api.genius.com"
+	SEARCH_URL = BASE_URL + "/search"
+
+
+
+	def __init__(self, bearer):
+		self.bearer = bearer
+		self.token = None
+
+
+	def makeAccessToken(self):
+		self.token = _Token("Genius", self.bearer)
+
+
+	def _getUrl(self, artist, title):
+
+		data = {'q': title}
+		headers = {'Authorization': 'Bearer ' + self.token.getToken()}
+
+		res = requests.get(self.SEARCH_URL, data=data, headers=headers).json()
+
+		for hit in res["response"]["hits"]:
+			if hit["result"]["primary_artist"]["name"].lower() == artist.lower():
+				return hit["result"]["url"]
+		else:
+			return None
+
+
+	def _getLyrics(sefl, url):
+		page = requests.get(url)
+		html = BeautifulSoup(page.text, "html.parser")
+
+		[h.extract() for h in html('script')]
+
+		lyrics = html.find("div", class_="lyrics").get_text()
+
+		return lyrics
+
+
+	def _clean(self, text):
+		skip1, skip2 = 0, 0
+		ret = ''
+
+		for char in text:
+			if char == '[':
+				skip1 += 1
+			elif char == '(':
+				skip2 += 1
+			elif char == ']':
+				skip1 -= 1
+			elif char == ')':
+				skip2 -= 1
+			elif skip1 == 0 and skip2 == 0:
+				ret += char
+
+		return ret
+
+	def makeSongs(self, artists):
+
+		songs = []
+
+		for artist in artists:
+			for song_title in artists[artist]:
+
+				url = self._getUrl(artist, song_title)
+
+				if url is not None:
+					lyrics = self._clean(self._getLyrics(url))
+				else:
+					lyrics = None
+				
+				songs.append(_Song(song_title, artist, url, lyrics))
+
+		return songs
+
+def getXXLFreshmen():
+
+	wikiurl = 'https://en.wikipedia.org/wiki/XXL_(magazine)#XXL_Annual_Freshman_List'
+	header = {'User Agend': 'Mozilla/5.0'}
+	page = urllib.request.urlopen(wikiurl)
+	html = BeautifulSoup(page, 'lxml')
+	
+	table = html.find("table", { "class": "sortable wikitable"})
+
+	xxl_lists = {}
+	year = ''
+	artists = ''
+	for row in table.findAll('tr'):
+		cell = row.findAll('td')
+
+		if len(cell) == 2:
+			year = cell[0].find(text=True)
+			temp = cell[1].findAll(text=True)
+
+			artists = [text for text in temp if text[0] not in '[,. ']
+
+			xxl_lists[year] = {artist: [] for artist in artists}
+
+	
+	return xxl_lists
+
+
+			# for item in cell:
+			# 	print(item.findAll(text=True))
+			# print(cell[1].findAll(text=True))
 
 
 
 
-# for hit in res["response"]["hits"]:
-# 	print(hit["result"]["full_title"])
 
 
 
-songs_2017 = {}
+# def main():
+# 	if sys.argv[1] == 'offline' or sys.argv[1] == '-o':
+# 		with open('songs.p', 'rb') as f:
+# 			songs = pickle.load(f)
 
+# 		for song in songs:
+# 			print(song.getLyrics())
 
+# 	else:
+# 		xxl_2017 = {"Kamaiyah": ['Break You Down'],
+# 				"A Boogie wit da Hoodie": ['Drowning'],
+# 				"PnB Rock": ['Selfish'],
+# 				"MadeinTYO": ['Uber Everywhere'],
+# 				"Playboi Carti": ['Magnolia'],
+# 				"Aminé": ['Caroline'],
+# 				"Kap G": ['Girlfriend'],
+# 				"Kyle": ['iSpy'],
+# 				"Ugly God": ['Water'],
+# 				"XXXTentacion": ['Look at Me']
+# 				}
 
-# for hit in res["response"]["hits"]:
-# 	if hit["result"]["primary_artist"]["name"].lower() == artist.lower():
-# 		song_title = hit["result"]["title"]
-# 		song_artist = hit["result"]["primary_artist"]["name"]
-# 		song_url = hit["result"]["url"]
+# 		gScrape = GeniusScraper(GENIUS_API_KEY)
+# 		gScrape.makeAccessToken()
 
-# 		songs_2017[song_title] = _Song(song_title, song_artist, song_url)
+# 		songs = gScrape.makeSongs(xxl_2017)
 
+# 		pickle.dump(songs, open("songs.p", 'wb'))
 
-# for key in songs_2017:
-# 	temp_url = songs_2017[key].getUrl()
-# 	page = requests.get(temp_url)
-# 	html = BeautifulSoup(page.text, "html.parser")
-
-# 	[h.extract() for h in html('script')]
-
-# 	lyrics = html.find("div", class_="lyrics").get_text()
-
-# 	print(lyrics)
-
-
-def getUrl(artist, title):
-
-	data = {'q': title}
-
-	res = requests.get(SEARCH_URL, data=data, headers=HEADERS).json()
-
-	for hit in res["response"]["hits"]:
-
-		if hit["result"]["primary_artist"]["name"].lower() == artist.lower():
-			return hit["result"]["url"]
-
-	else:
-		return None
-
-def getLyrics(url):
-	page = requests.get(url)
-	html = BeautifulSoup(page.text, "html.parser")
-
-	[h.extract() for h in html('script')]
-
-	lyrics = html.find("div", class_="lyrics").get_text()
-
-	return lyrics
-
-
-def clean(text):
-	skip1, skip2 = 0, 0
-	ret = ''
-
-	for char in text:
-		if char == '[':
-			skip1 += 1
-		elif char == '(':
-			skip2 += 1
-		elif char == ']':
-			skip1 -= 1
-		elif char == ')':
-			skip2 -= 1
-		elif skip1 == 0 and skip2 == 0:
-			ret += char
-
-	return ret
-
-def makeSongs(artists):
-
-	songs = []
-
-	for key in artists:
-
-		artist = key
-		for song_title in artists[key]:
-
-			url = getUrl(artist, song_title)
-
-			if url is not None:
-				lyrics = clean(getLyrics(url))
-			else:
-				lyrics = None
-			
-			songs.append(_Song(song_title, artist, url, lyrics))
-
-	return songs
+# 		# with open('songs.txt', 'w') as s:
+# 		# 	for song in songs:
+# 		# 		s.write(str(song))
+# 		# 		s.write(song.getLyrics())
 
 
 def main():
-	if sys.argv[1] == 'offline' or sys.argv[1] == '-o':
-		with open('songs.p', 'rb') as f:
-			songs = pickle.load(f)
+	# with open('songs.p', 'rb') as f:
+	# 	songs = pickle.load(f)
 
-		for song in songs:
-			print(song.getLyrics())
+	# 	for song in songs:
+	# 		print(song.getLyrics())
 
-	else:
-		xxl_2017 = {"Kamaiyah": ['Break You Down'],
-				"A Boogie wit da Hoodie": ['Drowning'],
-				"PnB Rock": ['Selfish'],
-				"MadeinTYO": ['Uber Everywhere'],
-				"Playboi Carti": ['Magnolia'],
-				"Aminé": ['Caroline'],
-				"Kap G": ['Girlfriend'],
-				"Kyle": ['iSpy'],
-				"Ugly God": ['Water'],
-				"XXXTentacion": ['Look at Me']
-				}
-
-		songs = makeSongs(xxl_2017)
-
-		pickle.dump(songs, open("songs.p", 'wb'))
-
-		# with open('songs.txt', 'w') as s:
-		# 	for song in songs:
-		# 		s.write(str(song))
-		# 		s.write(song.getLyrics())
-
-
+	xxl = getXXLFreshmen()
 
 if __name__ == '__main__':
 	main()
