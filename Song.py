@@ -206,11 +206,14 @@ class SpotifyScraper(object):
 
 		res = requests.get(url, params=data, headers=headers).json()
 
-		for hit in res['items']:
-			if hit['name'] not in albums:
-				albums[hit['name']] = [hit['id']]
-			else:
-				albums[hit['name']].append(hit['id'])
+		try:
+			for hit in res['items']:
+				if hit['name'] not in albums:
+					albums[hit['name']] = [hit['id']]
+				else:
+					albums[hit['name']].append(hit['id'])
+		except KeyError:
+			print('Artist not found in Spotify database...')
 			
 		return albums
 
@@ -252,7 +255,7 @@ class SpotifyScraper(object):
 		Returns:
 		disc -- a list of song names (str)
 		"""
-		print('Searching Spotify for artist...')
+		print('Searching Spotify for %s...' % (artist))
 		artist_id = self._getArtistID(artist)
 		albums = self._getAlbums(artist_id)
 		songs = self._getAllSongs(albums)
@@ -413,10 +416,12 @@ def main():
 
 	if not OFFLINE:
 		xxl = getXXLFreshmen()
-		pickle.dump(xxl, open('xxl.p', 'wb'))
+		with open('xxl.json', 'w') as file:
+			json.dump(xxl, file)
+		# pickle.dump(xxl, open('xxl.p', 'wb'))
 	else:
-		with open('xxl.p', 'rb') as file:
-			xxl = pickle.load(file)
+		with open('xxl.json', 'rb') as file:
+			xxl = json.load(file)
 
 		spot = SpotifyScraper(SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET)
 		spot.authorize()
@@ -425,8 +430,19 @@ def main():
 		# 	for artist in xxl[year]:
 		# 		spot.getArtistID(artist)
 
-		kdot = spot.getArtistDisc('Kendrick Lamar')
-		print(kdot)
+
+		for year in xxl:
+			for artist in xxl[year]:
+				xxl[year][artist] = spot.getArtistDisc(artist)
+
+		print(xxl)
+
+		with open('xxl_complete.json', 'w') as file:
+			json.dump(xxl, file)
+
+
+		# kdot = spot.getArtistDisc('Kendrick Lamar')
+		# print(kdot)
 
 	# xxl = getXXLFreshmen()
 	# pickle.dump(xxl, open('xxl.p', 'wb'))
