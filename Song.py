@@ -11,11 +11,13 @@ from keys import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET
 import pickle
 import sys
 import json
+import timeit
 
 import re, urllib.parse, urllib.request
+from tqdm import tqdm
 
 OFFLINE = True
-BEARER = 'BQBil1KHhgDPeeEYURpxBIx6Fjhhl5_27Zs_9Nrqf6yh24YhJ25E6m4PwQzZDgPIbpYy0tp2IymaCK1aO5FzCQ'
+
 
 class SpotifyTokenError(Exception):
 	"""
@@ -105,6 +107,24 @@ class SpotifyScraper(object):
 		self.token = None
 
 
+	def _clean(self, text):
+		skip1, skip2 = 0, 0
+		ret = ''
+
+		for char in text:
+			if char == '[':
+				skip1 += 1
+			elif char == '(':
+				skip2 += 1
+			elif char == ']':
+				skip1 -= 1
+			elif char == ')':
+				skip2 -= 1
+			elif skip1 == 0 and skip2 == 0:
+				ret += char
+
+		return str(ret)
+
 	def _requestToken(self):
 		"""
 		Requests an authorization token from Spotify API.
@@ -151,7 +171,7 @@ class SpotifyScraper(object):
 		Stores token object in self.token attribute
 		"""
 		self.token = self._get_stored_token()
-
+		print(self.token.isExpired())
 		if not self.token or self.token.isExpired():
 			response = self._requestToken()
 			tok = response['access_token']
@@ -240,7 +260,8 @@ class SpotifyScraper(object):
 
 				for hit in res['items']:
 					if hit['name'] not in songs:
-						songs.append(hit['name'])
+						song = self._clean(hit['name']) if 'feat' in hit['name'] else hit['name']
+						songs.append(song)
 
 		return songs
 
@@ -274,7 +295,7 @@ class SpotifyScraper(object):
 class GeniusScraper(object):
 
 	BASE_URL = "https://api.genius.com"
-	SEARCH_URL = BASE_URL + "/v1/search"
+	SEARCH_URL = BASE_URL + "/search"
 
 
 
@@ -283,16 +304,21 @@ class GeniusScraper(object):
 		self.token = None
 
 
-	def makeAccessToken(self):
+	def authorize(self):
 		self.token = _Token("Genius", self.bearer)
-
+		
 
 	def _getUrl(self, artist, title):
 
 		data = {'q': title}
 		headers = {'Authorization': 'Bearer ' + self.token.getToken()}
 
-		res = requests.get(self.SEARCH_URL, data=data, headers=headers).json()
+		res = requests.get(self.SEARCH_URL, data=data, headers=headers)
+
+		if not res:
+			return None
+		else:
+			res = res.json()
 
 		for hit in res["response"]["hits"]:
 			if hit["result"]["primary_artist"]["name"].lower() == artist.lower():
@@ -307,14 +333,19 @@ class GeniusScraper(object):
 
 		[h.extract() for h in html('script')]
 
-		lyrics = html.find("div", class_="lyrics").get_text()
+		lyrics = html.find("div", class_="lyrics")
 
-		return lyrics
+		if lyrics:
+			return lyrics.get_text()
+		else:
+			return None
 
 
 	def _clean(self, text):
 		skip1, skip2 = 0, 0
 		ret = ''
+		if not text:
+			return None
 
 		for char in text:
 			if char == '[':
@@ -328,25 +359,40 @@ class GeniusScraper(object):
 			elif skip1 == 0 and skip2 == 0:
 				ret += char
 
-		return ret
+		return str(ret)
 
-	def makeSongs(self, artists):
 
-		songs = []
+	def makeSong(self, artist, song):
 
-		for artist in artists:
-			for song_title in artists[artist]:
 
-				url = self._getUrl(artist, song_title)
+		# print("Searching for %s by %s..." % (song, artist))
 
-				if url is not None:
-					lyrics = self._clean(self._getLyrics(url))
-				else:
-					lyrics = None
+		url = self._getUrl(artist, song)
+
+		if url is not None:
+			lyrics = self._clean(self._getLyrics(url))
+			return _Song(song, artist, url, lyrics)
+		else:
+			return None
+
+
+	# def makeSong(self, artists):
+
+	# 	songs = []
+
+	# 	for artist in artists:
+	# 		for song_title in artists[artist]:
+
+	# 			url = self._getUrl(artist, song_title)
+
+	# 			if url is not None:
+	# 				lyrics = self._clean(self._getLyrics(url))
+	# 			else:
+	# 				lyrics = None
 				
-				songs.append(_Song(song_title, artist, url, lyrics))
+	# 			songs.append(_Song(song_title, artist, url, lyrics))
 
-		return songs
+	# 	return songs
 
 def getXXLFreshmen():
 
@@ -415,30 +461,50 @@ def getXXLFreshmen():
 def main():
 
 	if not OFFLINE:
-		xxl = getXXLFreshmen()
-		with open('xxl.json', 'w') as file:
-			json.dump(xxl, file)
-		# pickle.dump(xxl, open('xxl.p', 'wb'))
-	else:
+		
+		# xxl = getXXLFreshmen()
 		with open('xxl.json', 'rb') as file:
 			xxl = json.load(file)
 
 		spot = SpotifyScraper(SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET)
 		spot.authorize()
 
-		# for year in xxl:
-		# 	for artist in xxl[year]:
-		# 		spot.getArtistID(artist)
-
-
 		for year in xxl:
 			for artist in xxl[year]:
 				xxl[year][artist] = spot.getArtistDisc(artist)
 
-		print(xxl)
+		with open('xxl_complete.json', 'w') as file:
+			json.dump(xxl, file)
+
+
+
+		
+	else:
+		with open('xxl_complete.json', 'rb') as file:
+			xxl = json.load(file)
+
+		gen = GeniusScraper(GENIUS_API_KEY)
+		gen.authorize()
+
+		songs = []
+		for year in xxl:
+			for artist in xxl[year]:
+				print("Searching for songs by %s" % (artist))
+				for song in tqdm(xxl[year][artist]):
+					song_obj = gen.makeSong(artist, song)
+					if song_obj: songs.append(song_obj)
+
+
+		pickle.dump(songs, open('songs.p', 'wb'))
+
+
+
 
 		with open('xxl_complete.json', 'w') as file:
 			json.dump(xxl, file)
+
+
+
 
 
 		# kdot = spot.getArtistDisc('Kendrick Lamar')
@@ -452,7 +518,6 @@ def main():
 
 if __name__ == '__main__':
 	main()
-
 
 
 
